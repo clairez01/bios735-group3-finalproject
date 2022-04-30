@@ -1,0 +1,85 @@
+---
+title: "Beta Regression"
+author: "Samuel Hawke"
+date: "4/30/2022"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+data <- read.csv("happiness2.csv")
+
+ns <- c(sapply(as.vector(strsplit(colnames(data), "_"))[1:10],
+       function(x) { return(x[1]) }), "time", "fold")
+
+
+data_long <- matrix(0, nrow = 168 * 5, ncol = 12)
+colnames(data_long) <- ns
+
+# L = list()
+# 
+# for (i in 1:nrow(data)) {
+#   L[[i]] = t(matrix(data[i, 4:38], nrow = 7))
+# }
+
+for (i in 1:(nrow(data))) { # for each row of data
+  for (j in 1:5) { # create 5 rows in the new dataset
+    data_long[5*(i-1)+j, 1] = data[i, 1]
+    data_long[5*(i-1)+j, 2] = data[i, 2]
+    data_long[5*(i-1)+j, 3] = data[i, 3]
+    for (k in 4:9) {
+      data_long[5*(i-1)+j, k] = data[i, k + 7*(j-1)]
+    }
+    data_long[5*(i-1)+j, 11] = data[i, 39]
+  }
+}
+
+data_long <- data.frame(data_long)
+
+data_long$time <- rep(2015:2019, 168)
+data_long$fold <- as.vector(sapply(data$fold, function(x) rep(x, 5)))
+```
+
+
+```{r}
+write.csv(data_long, "happiness_long2.csv")
+
+library(betareg)
+
+data_long <- read.csv("happiness_long2.csv")
+
+data_long <- data.frame(data_long)
+data_long <- data_long[,2:13]
+
+data_long$score <- as.numeric(data_long$score) / 10
+data_long$time <- as.numeric(data_long$time)
+
+# data_long_noNAN <- data_long %>% filter(!is.na(score))
+
+m <- betareg(score ~ time + relevel(factor(region), ref = "Sub-Saharan Africa") + 
+                     GDPperCapita + 
+               socialSupport + healthyLifeExp + freedom + 
+               generosity + corruptionPerception, 
+    data = data_long)
+summary(m)
+
+data_long_f0 <- subset(data_long, fold == 0)
+data_long_f1 <- subset(data_long, fold == 1)
+
+m_train <- betareg(score ~ time + relevel(factor(region), ref = "Sub-Saharan Africa") + 
+                     GDPperCapita + 
+               socialSupport + healthyLifeExp + freedom + 
+               generosity + corruptionPerception, 
+    data = data_long_f0)
+summary(m_train)
+
+# training error
+mean((data_long_f0$score - predict(m_train, newdata = data_long_f0))^2, na.rm = T) * 10^2
+# test error
+mean((data_long_f1$score - predict(m_train, newdata = data_long_f1))^2, na.rm = T) * 10^2
+
+s <- summary(m)
+s$coefficients[[1]][,1] - qnorm(0.975) * s$coefficients[[1]][,2]
+s$coefficients[[1]][,1] + qnorm(0.975) * s$coefficients[[1]][,2]
+```

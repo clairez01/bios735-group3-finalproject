@@ -1,0 +1,70 @@
+---
+title: "Bios 735 Final Project - Logistic Regression Analysis"
+author: "Claire Zhu"
+date: "4/30/2022"
+output: html_document
+---
+
+# Logistic Regression Analysis of Categorical Happiness Scores
+
+First, we load the package.
+```{r}
+library(bios735.g3)
+```
+
+Then we read in the dataset, create time by happiness covariate interaction terms, and split the dataset into train and test.
+```{r}
+# Read in data
+data = read.csv(file="t_happiness.csv")
+
+# Create interaction terms
+data$t.GDPperCapita <- data$GDPperCapita*data$time
+data$t.socialSupport <- data$socialSupport*data$time
+data$t.healthyLifeExp <- data$healthyLifeExp*data$time
+data$t.freedom <- data$freedom*data$time
+data$t.generosity <- data$generosity*data$time
+data$t.corruptionPerception <- data$corruptionPerception*data$time
+
+# Create training and test datasets
+train <- data[data$fold==0,]
+test <- data[data$fold==1,]
+```
+
+Now we fit the logistic model. All interaction terms are not significant. Thus, we reduce the model by removing the interaction terms.
+```{r}
+set.seed(1) # Converged in 78 iterations
+full <- irls(data=data, yi="score_cat", xi=c(5:10,13,15:26))
+full
+
+set.seed(1) # Converged in 15 iterations
+reduced <- irls(data=train, yi="score_cat", xi=c(5:10,13,15:20))
+reduced
+```
+
+Now we will use this model to predict the binary happiness scores of the test dataset.
+```{r}
+test <- test[complete.cases(test),]
+len <- length(test[,1])
+
+# Add a column of 1s for the intercept
+x_test <- cbind(replicate(len,1),as.matrix(test[,c(5:10,13,15:20)])) 
+
+# Logit function
+logit = function(x) {return(exp(x)/(1 + exp(x)))}
+
+# Pull out final beta vector from output
+beta <- reduced[,1] 
+
+# Predicted probability of high score
+y_pred <- sapply(x_test %*% beta,logit)
+
+# Calculate MSE
+# Note: this is not a good metric to use for logistic regression
+sum((test[,"score_cat"] - y_pred)^2)/len
+
+# Create confusion matrix
+y <- data.frame(cbind(test[,"score_cat"],round(y_pred)))
+table(y)
+
+```
+The model has 80.4% accuracy, 98.8% sensitivity, and 52.7% specificity.

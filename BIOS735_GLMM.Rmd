@@ -1,0 +1,102 @@
+---
+title: "BIOS 735 Final Project - GLMM"
+author: "Wenbo Wang"
+date: "4/30/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First, load in the required packages.
+```{r}
+library(data.table)
+library(bios735.g3)
+```
+
+Next, we process the data.
+```{r}
+#read file (2015-2022)
+happiness <- na.omit(read.csv("happiness3.csv"))
+happiness <- happiness[,-1];
+
+#split data into x, y variables
+happiness_y <- happiness[,c(1,2,3,10,17,24,31, 38, 45,52)]
+happiness_x <- happiness[,-c(3,10,17,24,31,38, 45, 52)]
+
+#variables across years, prep for long format
+gdp_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(3,9,15,21,27, 33,39,45)])
+ssupport_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(4, 10, 16, 22, 28,34,40,46)])
+life_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(5, 11, 17, 23, 29, 35, 41,47)])
+freedom_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(6, 12, 18, 24, 30, 36,42,48)])
+generosity_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(7, 13, 19, 25, 31,37,43,49)])
+corruption_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(8, 14, 20, 26, 32,38,44,50)])
+
+#wide to long format for each variable
+gdp_long <- melt(setDT(gdp_x), id.vars = c("Country","Region"), variable.name = "year")
+ss_long <- melt(setDT(ssupport_x), id.vars = c("Country","Region"), variable.name = "year")
+life_long <- melt(setDT(life_x), id.vars = c("Country","Region"), variable.name = "year")
+freedom_long <- melt(setDT(freedom_x), id.vars = c("Country","Region"), variable.name = "year")
+gen_long <- melt(setDT(generosity_x), id.vars = c("Country","Region"), variable.name = "year")
+cor_long <- melt(setDT(corruption_x), id.vars = c("Country","Region"), variable.name = "year")
+score_long <- melt(setDT(happiness_y), id.vars = c("Country","Region"), variable.name = "year")
+
+#data processing - naming variables
+gdp_long$year <- gsub("[^0-9-]", "", gdp_long$year); colnames(gdp_long)[4] <- "gdp"
+ss_long$year <- gsub("[^0-9-]", "", ss_long$year); colnames(ss_long)[4] <- "support"
+life_long$year <- gsub("[^0-9-]", "", life_long$year); colnames(life_long)[4] <- "life"
+freedom_long$year <- gsub("[^0-9-]", "",freedom_long$year); colnames(freedom_long)[4] <- "freedom"
+gen_long$year <- gsub("[^0-9-]", "", gen_long$year); colnames(gen_long)[4] <- "generosity"
+cor_long$year <- gsub("[^0-9-]", "", cor_long$year); colnames(cor_long)[4] <- "corruption"
+score_long$year <- gsub("[^0-9-]", "", score_long$year); colnames(score_long)[4] <- "score"
+
+#combine all variables into one year
+totdata <- merge(x = gdp_long, y = ss_long, by = c("Country", "Region", "year"), all.x = TRUE)
+totdata <- merge(x = totdata, y = life_long, by = c("Country", "Region", "year"), all.x = TRUE)
+totdata <- merge(x = totdata, y = freedom_long, by = c("Country", "Region", "year"), all.x = TRUE)
+totdata <- merge(x = totdata, y = gen_long, by = c("Country", "Region", "year"), all.x = TRUE)
+totdata <- merge(x = totdata, y = cor_long, by = c("Country", "Region", "year"), all.x = TRUE)
+totdata <- merge(x = totdata, y = score_long, by = c("Country", "Region", "year"), all.x = TRUE)
+
+totdata[grep(c("East Asia|South Asia|Southeast Asia") , totdata$Region), ]$Region <- "Asia"
+totdata[grep(c("North America and ANZ|Western Europe") , totdata$Region), ]$Region <- "NA and ANZ, W Europe"
+totdata$year <- as.numeric(totdata$year) - 2015
+
+#create dummy variables for Region
+test <- model.matrix(score ~ 0 + Region + year + gdp + support + life + freedom + generosity + corruption, totdata)
+test2 <- model.matrix(score ~ 0 + Region, totdata)
+```
+
+Run glmm function.
+```{r}
+glmm(totdata$score, id = totdata$Country, fixed = test, mixed = test2)
+```
+
+Compare with nlme.
+```{r}
+library(nlme)
+nlme.randint = nlme::lme(
+  fixed       = score ~ 0 + Region + year + gdp + support + life + freedom + generosity + corruption,
+  random      = ~ 1 | Country,   ## random intercept
+  method      = 'REML',
+  control     = lmeControl(msMaxIter = 200, msMaxEval = 500, sing.tol=1e-20, opt = 'optim'),
+  data        = totdata,
+  weights     = varIdent(form = ~ 1 |Region )   ## says variances differ by Region
+)
+
+nlme.randslope = nlme::lme(
+  fixed       = score ~ 0 + Region + year + gdp + support + life + freedom + generosity + corruption,
+  random      = ~ 1 + Region| Country,   ## random intercept
+  method      = 'REML',
+  control     = lmeControl(msMaxIter = 200, msMaxEval = 500, sing.tol=1e-20, opt = 'optim'),
+  data        = totdata,
+  weights     = varIdent(form = ~ 1 |Region )   ## says variances differ by Region
+)
+
+logLik0 = 2 * as.numeric( logLik(nlme.randint, REML = T) )
+logLik1 = 2 * as.numeric( logLik(nlme.randslope, REML = T) )
+c('randint' = logLik0, 'randslope' = logLik1)
+LRT.nlme = -(logLik0 - logLik1)
+```
+

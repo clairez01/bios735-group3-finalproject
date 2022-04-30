@@ -1,0 +1,29 @@
+---
+title: "Bios 735 Final Project - Create Package"
+author: "Claire Zhu"
+date: "4/30/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+Load in the required libraries
+```{r}
+library(usethis)
+library(devtools)
+```
+
+Create and document package
+```{r}
+create_package("bios735.g3")
+
+list.files("bios735.g3")
+load_all("bios735.g3")
+
+devtools::document(pkg = "bios735.g3")
+build("bios735.g3")
+devtools::install("bios735.g3")
+```
+

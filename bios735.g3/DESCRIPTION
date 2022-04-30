@@ -1,0 +1,16 @@
+Package: bios735.g3
+Title: IRLS and GLMM from Scratch
+Version: 0.0.0.9000
+Authors@R: 
+    c(person("Claire", "Zhu", , "clairez1@live.unc.edu", role = c("aut", "cre")),
+      person("Wenbo", "Wang", , "wenbo@live.unc.edu", role = "aut"),
+      person("Sam", "Hawke", , "shawke@unc.edu", role = "aut"),
+      person("Daniel", "De Marchi", , "demarch@live.unc.edu", role = "aut"),
+      person("Yun", "Lin", , "mylin@email.unc.edu", role = "aut")
+    )
+Description: Perform logistic regression using iteratively reweighted least squares or fit a generalized linear mixed model.
+License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
+    license
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.2

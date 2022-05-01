@@ -1,0 +1,146 @@
+---
+title: "BIOS 735 Final Project - Mixture Model"
+author: "Wenbo Wang"
+date: "4/30/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load libraries
+```{r}
+library(data.table)
+library(EMMIX)
+library(mixtools)
+```
+
+Process data
+```{r}
+happiness <- na.omit(read.csv("C:/Users/wenbo/Downloads/happiness3.csv"))
+happiness <- happiness[,-1];
+
+happiness_y <- happiness[,c(1,2,3,10,17,24,31, 38, 45,52)]
+happiness_x <- happiness[,-c(3,10,17,24,31,38, 45, 52)]
+
+happiness_x_long <- melt(setDT(happiness_x), id.vars = c("Country","Region"), variable.name = "year")
+happiness_y_long <- melt(setDT(happiness_y), id.vars = c("Country", "Region"), variable.name = "year")
+```
+
+
+```{r}
+#mixing proportions and mean/var parameters, compare AIC or BIC
+obj1 <- EMMIX(happiness_y_long$value,1,"mvn",3,itmax=1000,epsilon=1e-5,nkmeans=10)
+obj2 <- EMMIX(happiness_y_long$value,2,"mvn",3,itmax=1000,epsilon=1e-5,nkmeans=10)
+obj3 <- EMMIX(happiness_y_long$value,3,"mvn",3,itmax=1000,epsilon=1e-5,nkmeans=10)
+obj4 <- EMMIX(happiness_y_long$value,4,"mvn",3,itmax=1000,epsilon=1e-5,nkmeans=10)
+obj5 <- EMMIX(happiness_y_long$value,5,"mvn",3,itmax=1000,epsilon=1e-5,nkmeans=10)
+obj6 <- EMMIX(happiness_y_long$value,6,"mvn",3,itmax=1000,epsilon=1e-5,nkmeans=10)
+obj7 <- EMMIX(happiness_y_long$value,7,"mvn",3,itmax=1000,epsilon=1e-5,nkmeans=10)
+
+#three mixtures result in lowest bic
+
+#view parameter values (mu, sigma, mixing proportions)
+as.vector(obj3$sigma)
+as.vector(obj3$mu)
+as.vector(obj3$pro)
+
+#create list of trajectories (y) and design matrices (x)
+gdp_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(3,9,15,21,27, 33,39,45)])
+ssupport_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(4, 10, 16, 22, 28,34,40,46)])
+life_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(5, 11, 17, 23, 29, 35, 41,47)])
+freedom_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(6, 12, 18, 24, 30, 36,42,48)])
+generosity_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(7, 13, 19, 25, 31,37,43,49)])
+corruption_x <- cbind(happiness_x[,c(1,2)],happiness_x[,c(8, 14, 20, 26, 32,38,44,50)])
+
+#x
+covariates_x <- list()
+for(i in 1:nrow(happiness_x)){
+  temp <- matrix(as.numeric(cbind(rep(1,8),t(gdp_x)[3:10,i],t(ssupport_x)[3:10,i],
+                                  t(life_x)[3:10,i], t(freedom_x)[3:10,i],
+                                  t(generosity_x)[3:10,i], t(corruption_x)[3:10,i]
+  )) , 8,7)
+  covariates_x[[i]] <- temp
+}
+
+#y
+covariates_y <- list()
+for(i in 1:nrow(happiness_y)){
+  covariates_y[[i]] <- matrix(as.numeric(happiness_y[i,3:10]), ncol = 1)
+}
+
+#run mixture glmm (identity link)
+
+lambda <- obj3$pro
+#assume mixture means remain the same across years - can try across different years
+mu <- matrix(rep(obj3$mu,8),8,3,byrow = TRUE)
+sigma <- as.vector(obj3$sigma)
+
+
+em.out <- regmixEM.mixed(y = covariates_y, x = covariates_x, sigma = sigma, arb.sigma = FALSE,
+                         lambda = lambda,
+                         addintercept.random = FALSE,
+                         epsilon = 1e-02, verb = TRUE, k = 3)
+```
+
+Additional code for dataProcess.R - calculate significance of random intercept
+
+```{r}
+library(lme4)
+library(lmerTest)
+
+lmm <- lmerTest::lmer(score ~  0 + Region + year + gdp + support + life + freedom + generosity + corruption +  (1  | Country), data = totdata, REML = TRUE)
+glm_0 <- glm(score ~  0 + Region + year + gdp + support + life + freedom + generosity + corruption, data = totdata)
+anova(lmm, glm_0)
+
+#Mixture plot
+require(distr)
+myMix <- UnivarMixingDistribution(Norm(mean=5.01, sd=sqrt(.66)),
+                                  Norm(mean=7.28, sd=sqrt(.06)),
+                                  Norm(mean=6.18, sd=sqrt(.14)),
+                                  mixCoeff=c(0.62, 0.14, 0.24))
+c1 <- rgb(173,216,230,max = 255, alpha = 50, names = "lt.blue")
+plot(myMix, to.draw.arg="d")
+hist(totdata$score, add = TRUE, freq = FALSE, main = "his", col = c1)
+
+#find average of posterior regression coefficient values
+coeff <- Reduce(`+`, coeff) / length(coeff)
+
+
+#calc. MSE for mixture
+x_1 <- which((em.out$posterior.z[,1]>0.5)) ; x1 <- covariates_x[x_1]
+x_2 <- which((em.out$posterior.z[,2]>0.5)) ; x2 <- covariates_x[x_2]
+x_3 <- which((em.out$posterior.z[,3]>0.5)) ; x3 <- covariates_x[x_3]
+
+#predicted values
+y1 <- list()
+for(i in 1:length(x1)){
+  y1[[i]] <- x1[[i]]%*%matrix(coeff[,1], nrow = 7, ncol = 1)
+}
+
+y2 <- list()
+for(i in 1:length(x2)){
+  y2[[i]] <- x2[[i]]%*%matrix(coeff[,2], nrow = 7, ncol = 1)
+}
+
+y3 <- list()
+for(i in 1:length(x3)){
+  y3[[i]] <- x3[[i]]%*%matrix(coeff[,3], nrow = 7, ncol = 1)
+}
+
+residuals1 <- residuals2 <- residuals3 <- NULL
+for(i in 1:length(x1)){
+  residuals1 <- cbind(residuals1,(covariates_y[[x_1[i]]] - y1[[i]])^2)
+}
+for(i in 1:length(x2)){
+  residuals2 <- cbind(residuals2,(covariates_y[[x_2[i]]] - y2[[i]])^2)
+}
+for(i in 1:length(x3)){
+  residuals3 <- cbind(residuals3,(covariates_y[[x_3[i]]] - y3[[i]])^2)
+}
+
+mse_1 <- sum(residuals1)/(length(x1)*8); mse_2 <- sum(residuals2)/(length(x2)*8)
+mse_3 <- sum(residuals3)/(length(x3)*8)
+```
+
